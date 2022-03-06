@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Diagnostics;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace ALDXVKSCU
@@ -7,48 +8,135 @@ namespace ALDXVKSCU
     {
         private static HttpClient httpClient = new();
 
-        private static string mergeToolCommand = "dxvk-cache-tool";
         private static string postJsonUrl = "https://www.reddit.com/r/linux_gaming/comments/t5xrho/.json";
-        private static string outputFile = "output.dxvk-cache";
         private static string idHistoryFile = "ids.list";
-        private static string inputFile1 = "r5apex.dxvk-cache";
-        private static string inputFile2 = "r5apex.dxvk-cache";
 
         internal static async Task Main(string[] args)
         {
-            var link = await GetPostText();
-
             if (!File.Exists(idHistoryFile))
             {
-                FileStream idfs = File.Create(idHistoryFile);
-                idfs.Close();
+                Console.WriteLine($"{idHistoryFile} not found...creating");
+                using (_ = File.Create(idHistoryFile)) { }
             }
 
-            string[] ids = await File.ReadAllLinesAsync(idHistoryFile);
+            string postData = await GetPostAsync(postJsonUrl);
+            var linkData = GetLinkFromPost(postData);
 
-            if (!ids.Contains(link.Id1 + "-" + link.Id2))
+            string[] savedIds = await File.ReadAllLinesAsync(idHistoryFile);
+            string fileId = linkData.Id1 + "-" + linkData.Id2;
+
+            if (savedIds.Contains(fileId))
             {
-                string downloadFilename = "r5apex." + DateTime.UtcNow.ToString("yyyy-MM-dd-HH-mm") + ".dxvk-cache";
-                using Stream stream = await httpClient.GetStreamAsync(link.Link);
-                using FileStream fs = File.OpenWrite(downloadFilename);
-                await stream.CopyToAsync(fs);
-                await File.AppendAllTextAsync(idHistoryFile, link.Id1 + "-" + link.Id2);
-
-                File.Copy(downloadFilename, "r5apex.dxvk-cache", true);
+                return;
             }
+
+            Console.Write($"Downloading file with id {fileId}...");
+            string downloadFilename = await DownloadFile(linkData.Link);
+            Console.WriteLine("done");
+            await File.AppendAllTextAsync(idHistoryFile, fileId);
+
+            File.Copy(downloadFilename, "r5apex.dxvk-cache", true);
+
+            CommitNewFile(fileId);
+
+            File.Delete(downloadFilename);
+            Console.WriteLine("Done");
         }
 
-        private static async Task<(string Link, string Id1, string Id2)> GetPostText()
+        private static async Task<string> GetPostAsync(string url)
         {
-            string response = await httpClient.GetStringAsync(postJsonUrl);
-            JsonDocument doc = JsonDocument.Parse(response);
+            Console.Write("Getting post data...");
+            string response = await httpClient.GetStringAsync(url);
+            Console.WriteLine("done");
+            return response;
+        }
 
-            JsonElement postJson = doc.RootElement.EnumerateArray().First();
-            string postText = postJson.GetProperty("data").GetProperty("children").EnumerateArray().First().GetProperty("data").GetProperty("selftext").GetString()!;
+        private static (string Link, string Id1, string Id2) GetLinkFromPost(string postData)
+        {
+            Console.Write("Extracting cache file download link...");
+            JsonDocument doc = JsonDocument.Parse(postData);
+            JsonElement postElement = doc.RootElement.EnumerateArray().First();
+            string selftext = postElement.GetProperty("data").GetProperty("children").EnumerateArray().First().GetProperty("data").GetProperty("selftext").GetString()!;
 
-            Match currentLinkMatch = Regex.Match(postText, @"https:\/\/cdn\.discordapp.com\/attachments\/(?<id1>\d+)\/(?<id2>\d+)\/r5apex.dxvk-cache");
-
+            Match currentLinkMatch = Regex.Match(selftext, @"https:\/\/cdn\.discordapp.com\/attachments\/(?<id1>\d+)\/(?<id2>\d+)\/r5apex.dxvk-cache");
+            Console.WriteLine("done");
             return (currentLinkMatch.Value, currentLinkMatch.Groups["id1"].Value, currentLinkMatch.Groups["id2"].Value);
+        }
+
+        private static async Task<string> DownloadFile(string url)
+        {
+            string downloadFilename = "r5apex." + DateTime.UtcNow.ToString("yyyy-MM-dd-HH-mm") + ".dxvk-cache";
+            using Stream stream = await httpClient.GetStreamAsync(url);
+            using FileStream fs = File.OpenWrite(downloadFilename);
+            await stream.CopyToAsync(fs);
+
+            return downloadFilename;
+        }
+
+        private static void CommitNewFile(string fileId)
+        {
+            Console.WriteLine("Adding updated files to git");
+            ProcessStartInfo gitAddInfo = new()
+            {
+                FileName = "git",
+                Arguments = "add r5apex.dxvk-cache ids.list",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            Process gitAdd = new()
+            {
+                StartInfo = gitAddInfo
+            };
+            gitAdd.Start();
+
+            while (!gitAdd.StandardOutput.EndOfStream)
+            {
+                Console.WriteLine(gitAdd.StandardOutput.ReadLine());
+            }
+            gitAdd.WaitForExit();
+
+            Console.WriteLine("Commiting new files to git");
+            ProcessStartInfo gitCommitInfo = new()
+            {
+                FileName = "git",
+                Arguments = $"commit -m \"{fileId}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            Process gitCommit = new()
+            {
+                StartInfo = gitCommitInfo
+            };
+            gitCommit.Start();
+
+            while (!gitCommit.StandardOutput.EndOfStream)
+            {
+                Console.WriteLine(gitCommit.StandardOutput.ReadLine());
+            }
+            gitCommit.WaitForExit();
+
+            Console.WriteLine("Pushing new commits to origin");
+            ProcessStartInfo gitPushInfo = new()
+            {
+                FileName = "git",
+                Arguments = "push",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            Process gitPush = new()
+            {
+                StartInfo = gitPushInfo
+            };
+            gitPush.Start();
+
+            while (!gitPush.StandardOutput.EndOfStream)
+            {
+                Console.WriteLine(gitPush.StandardOutput.ReadLine());
+            }
+            gitPush.WaitForExit();
         }
     }
 }
