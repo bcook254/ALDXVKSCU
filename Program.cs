@@ -27,6 +27,7 @@ namespace ALDXVKSCU
 
             if (savedIds.Contains(fileId))
             {
+                Console.WriteLine("File already downloaded");
                 return;
             }
 
