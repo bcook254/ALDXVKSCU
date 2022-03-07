@@ -34,7 +34,7 @@ namespace ALDXVKSCU
             Console.Write($"Downloading file with id {fileId}...");
             string downloadFilename = await DownloadFile(linkData.Link);
             Console.WriteLine("done");
-            await File.AppendAllTextAsync(idHistoryFile, fileId);
+            await File.AppendAllTextAsync(idHistoryFile, fileId + Environment.NewLine);
 
             File.Copy(downloadFilename, "r5apex.dxvk-cache", true);
 
