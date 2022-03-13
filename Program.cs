@@ -32,15 +32,15 @@ namespace ALDXVKSCU
             }
 
             Console.Write($"Downloading file with id {fileId}...");
-            string downloadFilename = await DownloadFile(linkData.Link);
+            string downloadFilename = await DownloadFile(linkData.Link, fileId);
             Console.WriteLine("done");
             await File.AppendAllTextAsync(idHistoryFile, fileId + Environment.NewLine);
 
             File.Copy(downloadFilename, "r5apex.dxvk-cache", true);
 
-            CommitNewFile(fileId);
+            //CommitNewFile(fileId);
 
-            File.Delete(downloadFilename);
+            //File.Delete(downloadFilename);
             Console.WriteLine("Done");
         }
 
@@ -64,9 +64,9 @@ namespace ALDXVKSCU
             return (currentLinkMatch.Value, currentLinkMatch.Groups["id1"].Value, currentLinkMatch.Groups["id2"].Value);
         }
 
-        private static async Task<string> DownloadFile(string url)
+        private static async Task<string> DownloadFile(string url, string id)
         {
-            string downloadFilename = "r5apex." + DateTime.UtcNow.ToString("yyyy-MM-dd-HH-mm") + ".dxvk-cache";
+            string downloadFilename = "r5apex." + id + ".dxvk-cache";
             using Stream stream = await httpClient.GetStreamAsync(url);
             using FileStream fs = File.OpenWrite(downloadFilename);
             await stream.CopyToAsync(fs);
